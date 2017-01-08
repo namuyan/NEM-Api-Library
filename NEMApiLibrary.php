@@ -161,6 +161,47 @@ class TransactionBuilder{
             ));
         return get_POSTdata($url, $POST_DATA);
     }
+    public function CreateMultisigAddr($OtherPubKeys,$require){
+        /* もしもPriKeyのアドレスも署名者に加えるならば
+         * $OtherPubKeysにPubKeyを加えなければならない
+         */
+        if(is_array($OtherPubKeys)){
+            $this->check(false);
+            $all_acounts = count($OtherPubKeys);
+            if($all_acounts < $require){
+                throw new Exception('Required cosignatories is more than input cosignatories');
+            }
+            foreach ($OtherPubKeys as $OtherPubKeysValue) {
+                $modifications = array(
+                    'modificationType' => 1,
+                    'cosignatoryAccount' => $OtherPubKeysValue
+                );
+            }
+            $url = $this->baseurl ."/transaction/prepare-announce";
+            $POST_DATA = json_encode(
+            array(
+                'transaction' => array(
+                    'timeStamp' => (time() - 1427587585),
+                    'amount'    => (16 + 6 * $all_acounts) * 1000000,    // 実際には１XEM取られない
+                    'type'      => 4097,
+                    'deadline'  => (time() - 1427587585 + 43200),
+                    'version'   => $this->version_ver2,
+                    'signer'    => $this->pubkey,
+                    'modifications' => $modifications,
+                    'minCosignatories' => array(
+                        'relativeChange' => $require
+                    )
+                ),
+                'privateKey' => $this->prikey
+            ));
+            return get_POSTdata($url, $POST_DATA);
+        }else{
+            throw new Exception('Set publickeys on $OtherPubKeys as array');
+        }
+    }
+    public function CreateMultisigTX(){
+        
+    }
     
     public function EstimateFee(){
         // 送金に必要なFeeを計算し返す
@@ -376,7 +417,6 @@ class Apostille {
         $nem -> amount = 0;
         $nem -> recipient = $this->recipient;
         $nem ->EstimateFee();
-        echo $nem->version_ver1;
         $tmp = $nem ->SendNEMver1();
         $reslt = $nem->analysis($tmp);
         $reslt['fee'] = $nem->fee;
