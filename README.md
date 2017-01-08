@@ -27,8 +27,8 @@ PHP7でも動くはずですが未確認です。
 
 
 ## Usage
-`git clone ```
-Apacheのルートフォルダ以下に`NEMApiLibrary.php`を加えて  
+`git clone https://github.com/namuyan/NEM-Api-Library.git`  
+`NEM-Api-Library`内の`NEMApiLibrary.php`、`example`をApacheのルートフォルダ以下に加えて  
 `require_once './NEMApiLibrary.php';`を使用するプログラム内に書き込むだけです。
 
 Copy and paset `NEMApiLibrary.php` to root folder of Aparch ,and add `require_once './NEMApiLibrary.php';` on your codes.
