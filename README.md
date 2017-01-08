@@ -26,19 +26,18 @@ test regist a file hash by *Apostille_register.php* ,test check the file hash by
 PHP7でも動くはずですが未確認です。
 
 
-## Usage
-`git clone https://github.com/namuyan/NEM-Api-Library.git`  
-`NEM-Api-Library`内の`NEMApiLibrary.php`、`example`をApacheのルートフォルダ以下に加えて  
-`require_once './NEMApiLibrary.php';`を使用するプログラム内に書き込むだけです。
-
-Copy and paset `NEMApiLibrary.php` to root folder of Aparch ,and add `require_once './NEMApiLibrary.php';` on your codes.
-
-
 ## Install
+`git clone https://github.com/namuyan/NEM-Api-Library.git`
+
+*NEM-Api-Library* 内の *NEMApiLibrary.php* をApacheのルートフォルダ以下に加えて  
+`require_once './NEMApiLibrary.php';` を使用するプログラム内に書き込むだけです。  
 特別なコマンドなどは必要としません。
 
+Copy and paset `NEMApiLibrary.php` to root folder of Aparch ,and add `require_once './NEMApiLibrary.php';` on your codes.  
 You aren't needed any special command.
 
+## Usage
+*example*フォルダ内のコメントを見て下さい。
 
 ## Licence
 
