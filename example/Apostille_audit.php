@@ -22,7 +22,7 @@
     $apo = new Apostille($filename);
     $apo->set_net($net); // mainnetならば必要ない
     $reslt = $apo->Check($baseurl);
-    $anal = $apo->analysis($baseurl, $reslt);
+    $anal = $apo->analysis($reslt,$baseurl);
     $algo = $apo->algo;
     
     if($reslt['status']){
