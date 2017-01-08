@@ -1,14 +1,14 @@
 <?php
 
 /* 
- * NEM API Library Ver 1.0
+ * NEM API Library Ver 1.01 Alpha
  */
 
 class TransactionBuilder{
     // NEM用トランザクション操作
     public $version_ver1;
     public $version_ver2;
-    public $net = 'mainnet';
+    public $net;
     public $recipient;
     public $amount; // 小数点アリ
     public $fee; // 小数点アリ
@@ -23,8 +23,8 @@ class TransactionBuilder{
 
     public function __construct($net = 'mainnet') {
         if($net === 'mainnet'){
-            $this->version_ver1 = -1744830465;
-            $this->version_ver2 = -1744830466;
+            $this->version_ver1 = 1744830465;
+            $this->version_ver2 = 1744830466;
         }elseif($net === 'testnet'){
             $this->version_ver1 = -1744830463;
             $this->version_ver2 = -1744830462;
@@ -376,6 +376,7 @@ class Apostille {
         $nem -> amount = 0;
         $nem -> recipient = $this->recipient;
         $nem ->EstimateFee();
+        echo $nem->version_ver1;
         $tmp = $nem ->SendNEMver1();
         $reslt = $nem->analysis($tmp);
         $reslt['fee'] = $nem->fee;
@@ -386,6 +387,9 @@ class Apostille {
     }
     public function Outfile($dir = '/opt/lampp/htdocs/apo/'){
         // あらかじめ保存場所$dirを設定
+        if(!isset($this->txid)){
+            throw new Exception("There isn't TXID. send may be not success.");
+        }
         $txid = $this->txid;
         $date = date("Y-m-d");
         preg_match('/.*?([^\/]+?)(\.[^.]+?)$/', $this->filename, $matches);
@@ -393,9 +397,9 @@ class Apostille {
         return copy($this->filename, $dest);
     }
 
-    public function Check($baseurl){
+    public function Check($baseurl = 'http://localhost:7890'){
         $filename_original = $this->filename;
-        $pattern = '/^(.*?\/)([^\/]+?)\s\-\-\sApostille\sTX\s([0-9abcdefABCDEF]+?)\s\-\-\sDate\s([0-9\-]+?)(\.[^.]+?)$/';
+        $pattern = '/^(.*?)([^\/]+?)\s\-\-\sApostille\sTX\s([0-9abcdefABCDEF]+?)\s\-\-\sDate\s([0-9\-]+?)(\.[^.]+?)$/';
         if(!preg_match($pattern, $filename_original, $matches)){
             throw new Exception("Error:FilenameがApostilleで使われる形式ではありません。");
         }
@@ -431,7 +435,7 @@ class Apostille {
             return array('status' => true ,'code' => 0,'detail' => $txdata['transaction']);
         }
     }
-    public function analysis($baseurl,$reslt){
+    public function analysis($reslt,$baseurl = 'http://localhost:7890'){
         $transaction = $reslt['detail'];
         $timeStamp = $transaction['timeStamp'] + 1427587585;
         $url = $baseurl.'/account/get/from-public-key?publicKey='. $transaction['signer'];
