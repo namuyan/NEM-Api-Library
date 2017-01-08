@@ -47,3 +47,7 @@ You aren't needed any special command.
 
 [namuyan](http://namuyan.dip.jp)  
 Twitter @namuyan_mine
+
+DonationCPaddress： 1BvRTmPCe47vee2CyrLi9AGeSEcrR2ciM4  
+DonationNEMaddress： NAN7XFG52NL3V5AW3NTSYO77AVR6X5LYRJKXWKHY  
+DonationMonacoin： MSYTEF7t62b9sjXt3oN9JokSjnYkvtcPFx  
