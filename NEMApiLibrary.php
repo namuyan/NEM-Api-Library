@@ -1,7 +1,7 @@
 <?php
 
 /* 
- * NEM API Library Ver 1.01 Alpha
+ * NEM API Library Ver 1.04 Alpha
  */
 
 class TransactionBuilder{
@@ -96,12 +96,12 @@ class TransactionBuilder{
             return FALSE;
         }
     }
-    public function SendNEMver1(){
+    public function SendNEMver1($send = true){
         // NEMを$addressへ送る,Non-mosaic
         // 返り値はTXID、失敗時はFalse
         $url = $this->baseurl ."/transaction/prepare-announce";
         $this->check();
-        $POST_DATA = json_encode(
+        $POST_DATA = 
                 array('transaction'=> array(
                     'timeStamp'=> (time() - 1427587585), // NEMは1427587585つまり2015/3/29 0:6:25 UTCスタート
                     'amount'   => $this->amount * 1000000,      // NEMは小数点以下6桁まで有効
@@ -117,11 +117,15 @@ class TransactionBuilder{
                     'signer'   => $this->pubkey  // signer　サイン主のこと
                     ),
                     'privateKey' => $this->prikey
-                ));
+                );
         // testnetは-1744830462だと以下のエラーが出る
         // expected value for property mosaics, but none was found これはNEMをモザイクとして送金する必要があるということ？
         //print_r($POST_DATA);print "<BR>"; // debug
-        return get_POSTdata($url, $POST_DATA);
+        if($send){
+            return get_POSTdata($url, json_encode($POST_DATA));
+        }else{
+            return $POST_DATA;
+        }
         // 返り値　Array ( [innerTransactionHash] => Array ( )
         //                 [code] => 1
         //                 [type] => 1
@@ -134,13 +138,13 @@ class TransactionBuilder{
         //                       [message] => invalid address 'TB235JLAOGALDATDJC7LXDMZSDMFBUMDVIBFVQ' (org.nem.core.model.Address)
         //                       [status] => 404 ) 
     }
-    public function SendMosaicVer2(){
+    public function SendMosaicVer2($send = true){
         // Mosaic送信用Ver2のトランザクション生成
         // 返り値はTXID、失敗時はFalse
         $mosaic = $this->mosaic;
         $url = $this->baseurl ."/transaction/prepare-announce";
         $this->check(false);
-        $POST_DATA = json_encode(
+        $POST_DATA = 
             array(
                 'transaction'=>array(
                     'timeStamp' => (time() - 1427587585),
@@ -158,49 +162,12 @@ class TransactionBuilder{
                     'mosaics'   => $mosaic,
                 ),
                 'privateKey'=>$this->prikey
-            ));
-        return get_POSTdata($url, $POST_DATA);
-    }
-    public function CreateMultisigAddr($OtherPubKeys,$require){
-        /* もしもPriKeyのアドレスも署名者に加えるならば
-         * $OtherPubKeysにPubKeyを加えなければならない
-         */
-        if(is_array($OtherPubKeys)){
-            $this->check(false);
-            $all_acounts = count($OtherPubKeys);
-            if($all_acounts < $require){
-                throw new Exception('Required cosignatories is more than input cosignatories');
-            }
-            foreach ($OtherPubKeys as $OtherPubKeysValue) {
-                $modifications = array(
-                    'modificationType' => 1,
-                    'cosignatoryAccount' => $OtherPubKeysValue
-                );
-            }
-            $url = $this->baseurl ."/transaction/prepare-announce";
-            $POST_DATA = json_encode(
-            array(
-                'transaction' => array(
-                    'timeStamp' => (time() - 1427587585),
-                    'amount'    => (16 + 6 * $all_acounts) * 1000000,    // 実際には１XEM取られない
-                    'type'      => 4097,
-                    'deadline'  => (time() - 1427587585 + 43200),
-                    'version'   => $this->version_ver2,
-                    'signer'    => $this->pubkey,
-                    'modifications' => $modifications,
-                    'minCosignatories' => array(
-                        'relativeChange' => $require
-                    )
-                ),
-                'privateKey' => $this->prikey
-            ));
-            return get_POSTdata($url, $POST_DATA);
+            );
+        if($send){
+            return get_POSTdata($url, json_encode($POST_DATA));
         }else{
-            throw new Exception('Set publickeys on $OtherPubKeys as array');
+            return $POST_DATA;
         }
-    }
-    public function CreateMultisigTX(){
-        
     }
     
     public function EstimateFee(){
@@ -315,6 +282,304 @@ class TransactionBuilder{
             }
         }
         return FALSE;
+    }
+    
+    public static function PubKey2Addr($PubKey,$baseurl = 'http://localhost:7890'){
+        // 公開鍵からアドレスへ変換
+        $url = $baseurl .'/account/get/from-public-key?publicKey='.$PubKey;
+        $data = get_json_array($url);
+        if($data){
+            return $data['account']['address'];
+        }else{
+            return FALSE;
+        }
+    }
+    public static function Addr2PubKey($address,$baseurl = 'http://localhost:7890'){
+        // アドレスから公開鍵へ変換
+        
+        $url = $baseurl .'/account/get/forwarded?address=' .  trim(str_replace('-', '', $address));
+        $data = get_json_array($url);
+        if(isset($data['account']['publicKey'])){
+            return $data['account']['publicKey'];
+        }else{
+            return FALSE;
+        }
+    }
+}
+
+class Multisig {
+    public $version_ver1;
+    public $version_ver2;
+    public $net;
+    public $recipient;
+    public $amount; // 小数点アリ
+    public $fee; // 小数点アリ
+    public $message = '';
+    public $payload;
+    public $deadline = 43200; // 60*60*24
+    private $pubkey;
+    private $prikey;
+    private $baseurl;
+    public $mosaic;
+    
+    public function __construct($pubkey,$prikey,$baseurl = 'http://localhost:7890') {
+        $this->pubkey = $pubkey;
+        $this->prikey = $prikey;
+        $this->baseurl = $baseurl;
+    }
+    public function set_net($net = 'mainnet'){
+        if(in_array($net, array('mainnet','testnet'),TRUE)){
+            $this->net = $net;
+            $this->version_ver1 = ($net === 'mainnet')? 1744830465 : -1744830463 ;
+            $this->version_ver2 = ($net === 'mainnet')? 1744830466 : -1744830462 ;
+        }else{
+            throw new Exception('$net must be mainnet or testnet.');
+        }
+    }
+    public function CreateAddr($OtherPubKeys,$require,$send = true){
+        /* マルチシグアドレスを署名者に加えることはできないので注意
+         * $OtherPubKeys に署名者のPubkeyを、$requireに必要署名数
+         */
+        if(isset($OtherPubKeys)){
+            $all_acounts = count($OtherPubKeys);
+            if($all_acounts < $require){
+                throw new Exception('Required cosignatories is more than input cosignatories');
+            }
+            if(!isset($this->net)){
+                throw new Exception('Do function net_set before function CreateAddr.');
+            }
+            foreach ($OtherPubKeys as $OtherPubKeysValue) {
+                $modifications[] = array(
+                    'modificationType' => 1,   // 1は加える、2は削除、7.5Adding and removing cosignatoriesと同じ
+                    'cosignatoryAccount' => $OtherPubKeysValue
+                );
+                if($OtherPubKeysValue === $this->pubkey){
+                    throw new Exception('Multisig account is same as a cosignator');
+                    // FAILURE_MULTISIG_ACCOUNT_CANNOT_BE_COSIGNER →　署名者が既にマルチシグアドレス
+                }
+            }
+            $url = $this->baseurl ."/transaction/prepare-announce";
+            $this->fee = 16 + 6 * $all_acounts;
+            $POST_DATA = 
+            array(
+                'transaction' => array(
+                    'timeStamp' => (time() - 1427587585),
+                    'fee'    => $this->fee * 1000000,
+                    'type'      => 4097,
+                    'deadline'  => (time() - 1427587585 + 43200),
+                    'version'   => $this->version_ver2,
+                    'signer'    => $this->pubkey,
+                    'modifications' => $modifications,
+                    'minCosignatories' => array(
+                        'relativeChange' => $require
+                    )
+                ),
+                'privateKey' => $this->prikey
+            );
+            if($send){
+                // P2Pネットワークへ流す
+                return get_POSTdata($url, json_encode($POST_DATA));
+            }else{
+                // P2Pネットワークへ流さずにFeeを返す
+                return array('data' => $POST_DATA,'fee' => $this->fee);
+            }
+        }else{
+            throw new Exception('Set publickeys on $OtherPubKeys as array');
+        }
+    }
+    public function InitialTX($otherTrans,$send = true){
+        /* マルチシグトランザクションの起こり
+         * 最初にTXを作成した人がinnerTransactionHashのFeeを払う
+         */
+        $url = $this->baseurl ."/transaction/prepare-announce";
+        /* これは例、トランザクションの入れ子がマルチシグ
+         * innerTransactionHashとはコレのこと
+        $otherTrans = array(
+                'timeStamp' => (time() - 1427587585),
+                'amount'    => $this->amount * 1000000,
+                'fee'       => $this->fee * 1000000,
+                'recipient' => $this->recipient,
+                'type'      => 257,
+                'deadline'  => (time() - 1427587585 + $this->deadline),
+                'message'   => array(
+                    'payload' => isset($this->payload)? $this->payload : bin2hex($this->message),
+                    'type'    => 1
+                ),
+                'version'   => $this->version_ver1,
+                'signer'    => $a
+        );
+         */
+        $POST_DATA = 
+            array(
+                'transaction' => array(
+                    'timeStamp' => (time() - 1427587585),
+                    'fee'       => 6 * 1000000,    // baseは6XEM、手数料はマルチシグアドレスより支払われる
+                    'type'      => 4100,
+                    'deadline'  => (time() - 1427587585 + $this->deadline),
+                    'version'   => $this->version_ver1,
+                    'signer'    => $this->pubkey,
+                    'otherTrans' => $otherTrans,
+                    'signatures' => array()  // ここにcosignerの署名が入る
+                ),
+                'privateKey' => $this->prikey
+            );
+        if($send){
+            // P2Pネットワークへ流す
+            return get_POSTdata($url, json_encode($POST_DATA));
+        }else{
+            // P2Pネットワークへ流さずにTXDATAを返す
+            return array('data' => $POST_DATA,'fee' => 6);
+        }
+    }
+    public function CosignTX($MultisigPubkey,$innerTransactionHash,$send = true){
+        /* 流れてきたマルチシグトランザクションに署名
+         * $innerTransactionHashは/account/unconfirmedTransactions?address=で取得できるmetaのdata
+         * 署名者にはFeeはかからない
+         */
+        $url = $this->baseurl ."/transaction/prepare-announce";
+        $POST_DATA = 
+            array(
+                'transaction' => array(
+                    'timeStamp' => (time() - 1427587585),
+                    'fee'       => 6 * 1000000,    // 追加署名する人は払わなくても良い
+                    'type'      => 4098,
+                    'deadline'  => (time() - 1427587585 + $this->deadline),
+                    'version'   => $this->version_ver1,
+                    'signer'    => $this->pubkey,
+                    'otherHash' => array('data' => $innerTransactionHash),
+                    'otherAccount' => TransactionBuilder::PubKey2Addr($MultisigPubkey, $this->baseurl),
+                ),
+                'privateKey' => $this->prikey
+            );
+        if($send){
+            // P2Pネットワークへ流す
+            return get_POSTdata($url, json_encode($POST_DATA));
+        }else{
+            // P2Pネットワークへ流さずにTXDATAを返す
+            return array('data' => $POST_DATA,'fee' => 0);
+        }
+    }
+    public function ModifiMultisig($MultisigPubkey,$ADDpubkey = array(),$REMpubkey = array(),$relativeChange = 0,$send = TRUE){
+        /*  Add or Remove multisig
+         *  $ADDpubkeyに署名者に加えるPubkey、$REMpubkeyに署名者から除外するPubkey
+         *  $relativeChangeに必要署名数を相対的に変更
+         *  Feeはマルチシグアドレスより引かれる
+         *  注意点、minCosignatories のみ　変更はできない（バグかも
+         */
+        $fee = 10 + ( count($ADDpubkey) + count($REMpubkey) ) * 6; // 10XEMをベースに１人を変更するたびに６XEM加算
+        if($relativeChange !== 0){ $fee += 6; } // 必要署名数を変更で６XEM加算
+        
+        $url = $this->baseurl .'/account/get/forwarded/from-public-key?publicKey='. $MultisigPubkey ;
+        $tmp = get_json_array($url);
+        if(count($tmp['meta']['cosignatories']) === 0){
+            throw new Exception($MultisigPubkey .' isn\t MultisigAddress.');
+        }
+        $minCosignatories = $tmp['account']['multisigInfo']['minCosignatories'];
+        $otherTrans = 
+            array(
+            'timeStamp' => (time() - 1427587585),
+            'fee'       => $fee * 1000000,
+            'type'      => 4097,
+            'deadline'  => (time() - 1427587585 + $this->deadline),
+            'version'   => (count($ADDpubkey) + count($REMpubkey) > 0)? $this->version_ver1 : $this->version_ver2 ,
+            'signer'    => $MultisigPubkey
+            );
+        if( $relativeChange !== 0){
+            $otherTrans['minCosignatories']['relativeChange'] = $relativeChange;
+        }
+        $otherTrans['modifications'] = array();
+        if( isset($ADDpubkey) ){
+            foreach ($ADDpubkey as $ADDpubkeyValue) {
+                $otherTrans['modifications'][] = array(
+                    'modificationType' => 1,
+                    'cosignatoryAccount' => $ADDpubkeyValue
+                );
+        }    }
+        if( isset($REMpubkey) ){
+            foreach ($REMpubkey as $REMpubkeyValue) {
+                $otherTrans['modifications'][] = array(
+                    'modificationType' => 2,
+                    'cosignatoryAccount' => $REMpubkeyValue
+                );
+        }    }
+        
+        $POST_DATA = 
+            array(
+                'transaction' => array(
+                    'timeStamp' => (time() - 1427587585),
+                    'fee'       => 6 * 1000000,    // 追加署名する人は払わなくても良い
+                    'type'      => 4100,
+                    'deadline'  => (time() - 1427587585 + $this->deadline),
+                    'version'   => $this->version_ver1,
+                    'signer'    => $this->pubkey,
+                    'otherTrans'=> $otherTrans,
+                    'signatures'=> array()
+                ),
+                'privateKey' => $this->prikey
+            );
+        if($send){
+            // P2Pネットワークへ流す
+            $url = $this->baseurl ."/transaction/prepare-announce";
+            return get_POSTdata($url, json_encode($POST_DATA));
+        }else{
+            // P2Pネットワークへ流さずにTXDATAを返す
+            return array('data' => $POST_DATA,'fee' => $fee + $minCosignatories * 6);
+        }
+    }
+
+    public static function checkMultisigTX($pubkey,$baseurl = 'http://localhost:7890'){
+        /* 自分のアドレスにマルチシグ署名依頼が来ていないか調べる。
+         * cronで定期実行するとよいと思います。Multisig::checkMultisigTX($NEMAddress, $pubkey)
+         */
+        $Addr = TransactionBuilder::PubKey2Addr($pubkey, $baseurl);
+        $url = $baseurl .'/account/unconfirmedTransactions?address=' . $Addr;
+        $data = get_json_array($url);
+        //$url = $baseurl .'/account/get/forwarded?address='. $MultisigAddr;
+        $url = $baseurl .'/account/get/forwarded/from-public-key?publicKey='. $pubkey;
+        $tmp = get_json_array($url);
+        print_r($tmp);
+        $minCosignatories = $tmp['account']['multisigInfo']['minCosignatories'];
+        
+        $reslt = array();
+        if(!isset($data['data'])){
+            return $reslt;
+        }
+        foreach ($data['data'] as $dataValue) {
+            $innerTransactionHash = $dataValue['meta']['data'];
+            $timeStamp = $dataValue['transaction']['timeStamp'] + 1427587585;
+            $type = $dataValue['transaction']['type'];
+            $deadline = $dataValue['transaction']['deadline'] + 1427587585;
+            $signers = count($dataValue['transaction']['signatures']);  // 既に署名した人の数
+            $otherTrans = $dataValue['transaction']['otherTrans'];  // マルチシグで送金される内容
+            
+            foreach ($dataValue['transaction']['signatures'] as $SignaturesValue) {
+                if($SignaturesValue['signer'] === $pubkey){
+                    // 既にあなたは署名済み
+                    continue;
+                }
+            }
+            if($type === 4100 AND $signers !== $minCosignatories -1){
+                // まだ署名していないマルチシグTX
+                $reslt[] = array('innerTransactionHash' => $innerTransactionHash,
+                                 'timeStamp'   => $timeStamp,
+                                 'deadline'    => $deadline,
+                                 'signers'     => $signers,
+                                 'needed'      => $minCosignatories,
+                                 'otherTrans'  => $otherTrans);
+            }else{
+                continue;
+            }
+        return $reslt;
+        }
+    }
+
+    public function analysis($reslt){
+        if(isset($reslt['message']) AND $reslt['message'] === 'SUCCESS'){
+            return array('status' => TRUE, 'txid' => $reslt['transactionHash']['data'],
+                'inner_txid' => isset($reslt['innerTransactionHash']['data'])? $reslt['innerTransactionHash']['data'] : NULL );
+        }else{
+            return array('status' => FALSE, 'message' => $reslt['message'] );
+        }
     }
 }
 
@@ -475,13 +740,12 @@ class Apostille {
             return array('status' => true ,'code' => 0,'detail' => $txdata['transaction']);
         }
     }
-    public function analysis($reslt,$baseurl = 'http://localhost:7890'){
-        $transaction = $reslt['detail'];
-        $timeStamp = $transaction['timeStamp'] + 1427587585;
-        $url = $baseurl.'/account/get/from-public-key?publicKey='. $transaction['signer'];
-        $tmp = get_json_array($url);
-        $creator = $tmp['account']['address'];
-        return array('timeStamp' => $timeStamp ,'creator' => $creator);
+    public function analysis($reslt){
+        if(isset($reslt['message']) AND $reslt['message'] === 'SUCCESS'){
+            return array('status' => TRUE, 'txid' => $reslt['transactionHash']['data']);
+        }else{
+            return array('status' => FALSE, 'message' => $reslt['message'] );
+        }
     }
 }
 
@@ -682,7 +946,7 @@ function SerchMosaicInfo($baseurl,$namespace,$name){
 /* Pure PHP implementation of SHA-3
  * https://github.com/0xbb/php-sha3
  * MIT
- * PHP7などであるならばSHA3_DesktopdのPurePHP使用可能
+ * PHP7などであるならばSHA3_DesktopdのPurePHP使用推奨
  * 何故か自分の環境では3倍遅かった
  */
 final class Sha3_0xbb {
