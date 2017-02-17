@@ -45,11 +45,13 @@ Copy and paset `NEMApiLibrary.php` to root folder of Aparch ,and add `require_on
 You aren't needed any special command.
 
 ## Usage
-*example*フォルダ内のコメントを見て下さい。
+*example*フォルダ内のコメントを見て下さい。  
+Look at example folders.
 
 ## Log
 2017-01-08 first commit  
-2017-01-12 Add Multisig function
+2017-01-12 Add Multisig function  
+2017-02-17 Add Transaction Decoder, add Cashe system and fix errors
 
 ## Licence
 

@@ -1,7 +1,7 @@
 <?php
 
 /* 
- * NEM API Library Ver 1.04 Alpha
+ * NEM API Library Ver 1.12 Alpha
  */
 
 class TransactionBuilder{
@@ -181,6 +181,7 @@ class TransactionBuilder{
             $namespace = $mosaicValue['mosaicId']['namespaceId'];
             $name = $mosaicValue['mosaicId']['name'];
             $DetailMosaic = SerchMosaicInfo($this->baseurl,$namespace, $name);
+            if(!$DetailMosaic){ return FALSE;}
             if($DetailMosaic['initialSupply'] <= 10000 AND $DetailMosaic['divisibility'] === 0){
                 // SmallBusinessMosaic
                 // 分割０でSupply１万以下のMosaicは"SmallBusinessMosaic"と呼ばれFeeが安いぞぃ
@@ -208,9 +209,13 @@ class TransactionBuilder{
         }
     }// end of Non-mosaic
     
-    $message = isset($this->payload)? $this->payload : $this->message ;
-    if(strlen($message) > 0){ // messageのFee
-        $fee_tmp = floor(strlen($message) / 32) + 1;
+    if(isset($this->payload)){
+        if(!preg_match('/^fe([0-9abcdefABCDEF]+)/', $this->payload, $matches)){
+            throw new Exception("payload must begin with 'fe' and consist of hex code, for example 'fe01234567890abcdef' is OK.");
+        }
+        $fee_tmp = floor(strlen($matches[1]) / 32 /2) + 1;
+    }elseif(strlen($this->message) > 0){ // messageのFee
+        $fee_tmp = floor(strlen($this->message) / 32) + 1;
     }else{
         $fee_tmp = 0;
     }
@@ -227,6 +232,7 @@ class TransactionBuilder{
             $namespace = $mosaicValue['mosaicId']['namespaceId'];
             $name = $mosaicValue['mosaicId']['name'];
             $MosaicData = SerchMosaicInfo($this->baseurl,$namespace, $name);
+            if(!$MosaicData){ return FALSE;}
             $levy = $MosaicData['detail']['mosaic']['levy'];
             if(empty($levy)){
                 continue;
@@ -286,8 +292,14 @@ class TransactionBuilder{
     
     public static function PubKey2Addr($PubKey,$baseurl = 'http://localhost:7890'){
         // 公開鍵からアドレスへ変換
-        $url = $baseurl .'/account/get/from-public-key?publicKey='.$PubKey;
-        $data = get_json_array($url);
+        if(CasheGet($PubKey)){
+            $data = CasheGet($PubKey);
+        }else{
+            $url = $baseurl .'/account/get/from-public-key?publicKey='.$PubKey;
+            $data = get_json_array($url);
+            CasheInsert($PubKey, $data);
+        }
+        
         if($data){
             return $data['account']['address'];
         }else{
@@ -296,14 +308,30 @@ class TransactionBuilder{
     }
     public static function Addr2PubKey($address,$baseurl = 'http://localhost:7890'){
         // アドレスから公開鍵へ変換
+        $Addr_tmp = trim(str_replace('-', '', $address));
+        if(CasheGet($Addr_tmp)){
+            $data = CasheGet($Addr_tmp);
+        }else{
+            $url = $baseurl .'/account/get/forwarded?address=' .  $Addr_tmp;
+            $data = get_json_array($url);
+            CasheInsert($Addr_tmp, $data);
+        }
         
-        $url = $baseurl .'/account/get/forwarded?address=' .  trim(str_replace('-', '', $address));
-        $data = get_json_array($url);
+        if($data === array()){
+            return "";
+        }elseif($data === false){
+            return false;
+        }else{
+            return $data['account']['publicKey'];
+        }
+        /*
+        }
         if(isset($data['account']['publicKey'])){
             return $data['account']['publicKey'];
         }else{
             return FALSE;
         }
+         */
     }
 }
 
@@ -534,11 +562,7 @@ class Multisig {
         $Addr = TransactionBuilder::PubKey2Addr($pubkey, $baseurl);
         $url = $baseurl .'/account/unconfirmedTransactions?address=' . $Addr;
         $data = get_json_array($url);
-        //$url = $baseurl .'/account/get/forwarded?address='. $MultisigAddr;
-        $url = $baseurl .'/account/get/forwarded/from-public-key?publicKey='. $pubkey;
-        $tmp = get_json_array($url);
-        print_r($tmp);
-        $minCosignatories = $tmp['account']['multisigInfo']['minCosignatories'];
+        
         
         $reslt = array();
         if(!isset($data['data'])){
@@ -558,13 +582,12 @@ class Multisig {
                     continue;
                 }
             }
-            if($type === 4100 AND $signers !== $minCosignatories -1){
+            if($type === 4100 ){
                 // まだ署名していないマルチシグTX
                 $reslt[] = array('innerTransactionHash' => $innerTransactionHash,
                                  'timeStamp'   => $timeStamp,
                                  'deadline'    => $deadline,
                                  'signers'     => $signers,
-                                 'needed'      => $minCosignatories,
                                  'otherTrans'  => $otherTrans);
             }else{
                 continue;
@@ -793,7 +816,202 @@ class common{
     }
 }
 
+class History {
+    // 履歴を取得
+    public $version_ver1;
+    public $version_ver2;
+    public $net;
+    public $pubkey;
+    public $prikey;
+    public $baseurl;
+    public $pageid;
 
+
+    public function __construct($net = 'mainnet') {
+        if($net === 'mainnet'){
+            $this->version_ver1 = 1744830465;
+            $this->version_ver2 = 1744830466;
+        }elseif($net === 'testnet'){
+            $this->version_ver1 = -1744830463;
+            $this->version_ver2 = -1744830462;
+        }else{
+            throw new Exception("Error:net parameter isn't set ,net is mainnet or testnet.");
+        }
+        $this->net = $net;
+    }
+    public function setting($NEMpubkey,$NEMprikey = null,$baseurl = 'http://localhost:7890'){
+        $this->pubkey = $NEMpubkey;
+        $this->address = TransactionBuilder::PubKey2Addr($NEMpubkey, $baseurl);
+        $this->prikey = $NEMprikey;
+        $this->baseurl = $baseurl;
+    }
+    
+    private function checkWDM(){
+        if(!isset($this->prikey)){
+            throw new Exception('Error:$prikey is not set.');
+        }
+        // ローカルでのみ使用可能
+        //if(preg_match('/[localhost|127\.0\.0\.1]/',$this->baseurl) !== 1){
+        //    throw new Exception('Error:It function work only on localhost.');
+        //}
+    }
+    public function IncomingWDM(){
+        /* Transaction data with decoded messages
+         * 暗号化されたmessageを復号化して
+         */
+        $this->checkWDM();
+        $url = $this->baseurl .'/local/account/transfers/incoming';
+        $POST_DATA = array( 'value' => $this->prikey );
+        if(isset($this->pageid)){
+            $POST_DATA['id'] = $this->pageid;
+        } // 2ページよりidによりページを指示
+        $history = get_POSTdata($url, json_encode($POST_DATA) );
+        if(!empty($history['data'])){
+            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            return $history['data'];
+        }else{
+            return FALSE;
+        }
+    }
+    public function OutgoingWDM(){
+        /* Transaction data with decoded messages
+         * 暗号化されたmessageを復号化して
+         */
+        $this->checkWDM();
+        $url = $this->baseurl .'/local/account/transfers/outgoing';
+        $POST_DATA = array( 'value' => $this->prikey );
+        if(isset($this->pageid)){
+            $POST_DATA['id'] = $this->pageid;
+        } // 2ページよりidによりページを指示
+        $history = get_POSTdata($url, json_encode($POST_DATA) );
+        if(!empty($history['data'])){
+            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            return $history['data'];
+        }else{
+            return FALSE;
+        }
+    }
+    public function AllWDM(){
+        /* Transaction data with decoded messages
+         * 暗号化されたmessageを復号化して
+         */
+        $this->checkWDM();
+        $url = $this->baseurl .'/local/account/transfers/all';
+        $POST_DATA = array( 'value' => $this->prikey );
+        if(isset($this->pageid)){
+            $POST_DATA['id'] = $this->pageid;
+        } // 2ページよりidによりページを指示
+        $history = get_POSTdata($url, json_encode($POST_DATA) );
+        if(!empty($history['data'])){
+            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            return $history['data'];
+        }else{
+            return FALSE;
+        }
+    }
+    private function check(){
+        if(!isset($this->address)){
+            throw new Exception('Error:$address is not set.');
+        }
+    }
+    public function Incoming(){
+        /* 通常のHistory取得
+         */
+        $this->check();
+        $url = $this->baseurl .'/account/transfers/incoming?address=' .$this->address;
+        if(isset($this->pageid)){
+            $url .= '&id=' .$this->pageid;
+        } // 2ページよりidによりページを指示
+        $history = get_json_array($url);
+        if(!empty($history['data'])){
+            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            return $history['data'];
+        }else{
+            return FALSE;
+        }
+    }
+    public function Outgoing(){
+        /* 通常のHistory取得
+         */
+        $this->check();
+        $url = $this->baseurl .'/account/transfers/outgoing?address=' .$this->address;
+        if(isset($this->pageid)){
+            $url .= '&id=' .$this->pageid;
+        } // 2ページよりidによりページを指示
+        $history = get_json_array($url);
+        if(!empty($history['data'])){
+            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            return $history['data'];
+        }else{
+            return FALSE;
+        }
+    }
+    public function All(){
+        /* 通常のHistory取得
+         */
+        $this->check();
+        $url = $this->baseurl .'/account/transfers/all?address=' .$this->address;
+        if(isset($this->pageid)){
+            $url .= '&id=' .$this->pageid;
+        } // 2ページよりidによりページを指示
+        $history = get_json_array($url);
+        if(!empty($history['data'])){
+            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            return $history['data'];
+        }else{
+            return FALSE;
+        }
+    }
+    
+    public function DecodeArray($transaction){
+        if(!isset($transaction[0])){
+            throw new Exception('Error:$transaction key is not numeristic.');
+        }
+        $reslt = array();
+        foreach ($transaction as $transactionValue) {
+            $tmp = array();
+            $tmp['height'] = $transactionValue['meta']['height'];
+            $tmp['timeStamp'] = $transactionValue['transaction']['timeStamp'] + 1427587585;
+            // 内部ハッシュが実際の送金内容
+            if(!empty($transactionValue['meta']['innerHash'])){
+                // Multisig
+                $tmp['hash'] = $transactionValue['meta']['innerHash']['data'];
+                $tmp['Multisig'] = TRUE;
+                $tx_tmp = $transactionValue['transaction']['otherTrans'];
+            }else{
+                // No Multisig
+                $tmp['hash'] = $transactionValue['meta']['hash']['data'];
+                $tmp['Multisig'] = FALSE;
+                $tx_tmp = $transactionValue['transaction'];
+            }
+            $tmp['siger'] = $tx_tmp['signer'];
+            $tmp['fee']    = $tx_tmp['fee'];
+            
+            
+            if($tx_tmp['type'] === 257 AND $tx_tmp['version'] === $this->version_ver1){
+                // XEM送金トランサクション
+                $tmp['txtype'] = 1;
+                $tmp['amount'] = $tx_tmp['amount'];
+                $tmp['recipient'] = $tx_tmp['recipient'];
+                $tmp['message'] = $tx_tmp['message'];
+                
+            }elseif($tx_tmp['type'] === 257 AND $tx_tmp['version'] === $this->version_ver2){
+                // Mosaic送金トランザクション
+                $tmp['txtype'] = 2;
+                $tmp['recipient'] = $tx_tmp['recipient'];
+                $tmp['mosaic']  = $tx_tmp['mosaics'];
+                $tmp['message'] = $tx_tmp['message'];
+            }elseif($tx_tmp['type'] === 4097 ){
+                // Multisig変換または編集トランザクション
+                $tmp['txtype'] = 3;
+                $tmp['minCosignatories'] = $tx_tmp['minCosignatories'];
+                $tmp['modifications']   = $tx_tmp['modifications'];
+            }
+            $reslt[] = $tmp;
+        }
+        return $reslt;
+    }
+}
 
 
 function get_json_array($url){
@@ -803,12 +1021,13 @@ function get_json_array($url){
     //$url = "https://c-cex.com/t/dash-btc.json"; //debug
     //$json = file_get_contents($url);
     //return json_decode(mb_convert_encoding($json, 'UTF8', 'ASCII,JIS,UTF-8,EUC-JP,SJIS-WIN'),true);
-    
-$options = [
-    CURLOPT_URL => $url,
-    CURLOPT_CUSTOMREQUEST => 'GET',
-    CURLOPT_SSL_VERIFYPEER => false,
-];
+    $i = 3;
+    RE_TRY:
+    $options = [
+        CURLOPT_URL => $url,
+        CURLOPT_CUSTOMREQUEST => 'GET',
+        CURLOPT_SSL_VERIFYPEER => false,
+    ];
     $ch = curl_init();
      curl_setopt_array($ch, $options);
      curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
@@ -818,7 +1037,13 @@ $options = [
      curl_close($ch);
 
 if($code !== 200){
-    return false;
+    $i--;
+    sleep(2);
+    if($i > 0){
+        goto RE_TRY;
+    }else{
+        return false;
+    }
 }  else {
     $json = mb_convert_encoding($json, 'UTF8', 'ASCII,JIS,UTF-8,EUC-JP,SJIS-WIN');
     $arr = json_decode($json,true);
@@ -829,6 +1054,8 @@ if($code !== 200){
 
 function get_POSTdata($url,$POST_DATA = null){
     //$POST_DATAにPOSTデータ、key=>valueの配列型
+    $i = 3;
+    RE_TRY:
     $curl=curl_init($url);
         curl_setopt($curl,CURLOPT_POST, TRUE);
         if(is_array($POST_DATA)){
@@ -854,7 +1081,23 @@ function get_POSTdata($url,$POST_DATA = null){
 	);
         curl_setopt_array($curl, $options);
         }
-    return json_decode(curl_exec($curl),true);
+    $json = curl_exec($curl);
+    // ステータスコード取得
+    $code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    curl_close($curl);
+if($code !== 200){
+    $i--;
+    sleep(2);
+    if($i > 0){
+        goto RE_TRY;
+    }else{
+        return false;
+    }
+}  else {
+    $json = mb_convert_encoding($json, 'UTF8', 'ASCII,JIS,UTF-8,EUC-JP,SJIS-WIN');
+    $arr = json_decode($json,true);
+    return $arr;
+}
 }// end of get_POSTdata
 
 function RandumStr($num){
@@ -869,9 +1112,22 @@ function RandumStr($num){
 function SerchMosaicInfo($baseurl,$namespace,$name){
     // Mosaicの詳細を検索、検索して無かったらFalse返す
     if($namespace !== 'nem' AND $name !== 'xem'){
-        $url = $baseurl."/namespace/mosaic/definition/page?namespace=$namespace";
-        $DetailMosaic = get_json_array($url);
-        if(!isset($DetailMosaic)){return FALSE;}
+        if(CasheGet($namespace)){
+            // キャッシュアリ
+            $DetailMosaic = CasheGet($namespace);
+        }else{
+            // キャッシュ無し
+            $url = $baseurl."/namespace/mosaic/definition/page?namespace=". $namespace;
+            $DetailMosaic = get_json_array($url);
+            CasheInsert($namespace, $DetailMosaic);
+        }
+        
+        if(!isset($DetailMosaic['data'])){
+            echo "<BR>",$url,"<BR>",$namespace,"<BR>";
+            print_r($DetailMosaic);
+            return FALSE;
+        }
+        
         foreach ($DetailMosaic['data'] as $DetailMosaicValue) {
             if($DetailMosaicValue['mosaic']['id']['name'] === $name){
                 foreach ($DetailMosaicValue['mosaic']['properties'] as $DetailMosaicValue2) {
@@ -938,6 +1194,22 @@ function SerchMosaicInfo($baseurl,$namespace,$name){
   }
 }
      */
+}
+
+/*  NEM API 用キャッシュ
+ *  Addr⇔PubKey、Mosaic定義に使用
+ */
+function CasheInsert($key,$value){
+    global $nem_api_library_cache;
+    $nem_api_library_cache[$key] = $value;
+}
+function CasheGet($key){
+    global $nem_api_library_cache;
+    if(isset($nem_api_library_cache[$key])){
+        return $nem_api_library_cache[$key];
+    }else{
+        return FALSE;
+    }
 }
 
 
