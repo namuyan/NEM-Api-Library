@@ -1,7 +1,7 @@
 <?php
 
 /* 
- * NEM API Library Ver 1.12 Alpha
+ * NEM API Library Ver 1.13 Alpha
  */
 
 class TransactionBuilder{
@@ -824,7 +824,7 @@ class History {
     public $pubkey;
     public $prikey;
     public $baseurl;
-    public $pageid;
+    public $pageid = NULL;
 
 
     public function __construct($net = 'mainnet') {
@@ -867,7 +867,7 @@ class History {
         } // 2ページよりidによりページを指示
         $history = get_POSTdata($url, json_encode($POST_DATA) );
         if(!empty($history['data'])){
-            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            $this->pageid = $history['data'][count($history['data']) -1]['meta']['id'];
             return $history['data'];
         }else{
             return FALSE;
@@ -885,7 +885,7 @@ class History {
         } // 2ページよりidによりページを指示
         $history = get_POSTdata($url, json_encode($POST_DATA) );
         if(!empty($history['data'])){
-            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            $this->pageid = $history['data'][count($history['data']) -1]['meta']['id'];
             return $history['data'];
         }else{
             return FALSE;
@@ -903,7 +903,7 @@ class History {
         } // 2ページよりidによりページを指示
         $history = get_POSTdata($url, json_encode($POST_DATA) );
         if(!empty($history['data'])){
-            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            $this->pageid = $history['data'][count($history['data']) -1]['meta']['id'];
             return $history['data'];
         }else{
             return FALSE;
@@ -924,7 +924,7 @@ class History {
         } // 2ページよりidによりページを指示
         $history = get_json_array($url);
         if(!empty($history['data'])){
-            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            $this->pageid = $history['data'][count($history['data']) -1]['meta']['id'];
             return $history['data'];
         }else{
             return FALSE;
@@ -940,7 +940,7 @@ class History {
         } // 2ページよりidによりページを指示
         $history = get_json_array($url);
         if(!empty($history['data'])){
-            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            $this->pageid = $history['data'][count($history['data']) -1]['meta']['id'];
             return $history['data'];
         }else{
             return FALSE;
@@ -956,7 +956,7 @@ class History {
         } // 2ページよりidによりページを指示
         $history = get_json_array($url);
         if(!empty($history['data'])){
-            $this->pageid = $history['data'][count($history) -1]['meta']['id'];
+            $this->pageid = $history['data'][count($history['data']) -1]['meta']['id'];
             return $history['data'];
         }else{
             return FALSE;
