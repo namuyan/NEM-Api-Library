@@ -2,7 +2,12 @@
 
 ![NEM logo](https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Nem_logo.svg/1000px-Nem_logo.svg.png)
 
-#Overview
+
+## Important  
+**Ⅾevelopment of this library has stopped. We recommend 2 libararys.**  
+**[lezhnev74\/NEM-Api-Library](https://github.com/lezhnev74/NEM-Api-Library) or [evias\/nem-php](https://github.com/evias/nem-php)**
+
+## Overview  
 **NEM Api Library**を使用することにより、WEBサーバーで頻繁に使用される言語であるPHPにて*XEMの送金*、*Mosaicの送金*、*アポスティーユ*
 、*Multisig* を簡単に実現できます。
 
